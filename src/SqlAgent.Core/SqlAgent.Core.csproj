@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Dialect-aware SQL parser (ADR-0002): one library covers both T-SQL and PostgreSQL. -->
+    <PackageReference Include="SqlParserCS" Version="0.6.5" />
+  </ItemGroup>
+
 </Project>
