@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SqlAgent.Core;
 
 namespace SqlAgent.Storage;
 

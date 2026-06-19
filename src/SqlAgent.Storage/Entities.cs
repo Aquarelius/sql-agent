@@ -1,11 +1,6 @@
-namespace SqlAgent.Storage;
+using SqlAgent.Core;
 
-/// <summary>Database engine a connection targets. Drives provider selection (see CD-57).</summary>
-public enum DatabaseProviderType
-{
-    SqlServer = 1,
-    Postgres = 2,
-}
+namespace SqlAgent.Storage;
 
 /// <summary>
 /// A configured database connection. The connection string itself is never stored here —

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SqlAgent.Core;
 using SqlAgent.Storage;
 
 namespace SqlAgent.Tests;
