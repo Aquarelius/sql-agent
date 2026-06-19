@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SqlAgent.Core\SqlAgent.Core.csproj" />
+    <ProjectReference Include="..\..\src\SqlAgent.Storage\SqlAgent.Storage.csproj" />
   </ItemGroup>
 
 </Project>

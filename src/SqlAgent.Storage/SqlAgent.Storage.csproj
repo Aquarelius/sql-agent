@@ -4,6 +4,14 @@
     <ProjectReference Include="..\SqlAgent.Core\SqlAgent.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
+    <!-- Override EF Core's transitive SQLitePCLRaw 2.1.11 (GHSA-2m69-gcr7-jv3q) with the patched native lib. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.0" />
+    <!-- DPAPI for the Windows v1 secret store. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
