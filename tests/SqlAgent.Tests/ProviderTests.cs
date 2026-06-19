@@ -18,6 +18,9 @@ file sealed class FakeProvider(DatabaseProviderType type, ConnectionTestResult r
         LastConnectionString = connectionString;
         return Task.FromResult(result);
     }
+
+    public Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }
 
 public class DatabaseProviderRegistryTests
