@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SqlAgent.Core\SqlAgent.Core.csproj" />
+    <ProjectReference Include="..\SqlAgent.Storage\SqlAgent.Storage.csproj" />
+    <ProjectReference Include="..\SqlAgent.Providers.SqlServer\SqlAgent.Providers.SqlServer.csproj" />
+    <ProjectReference Include="..\SqlAgent.Providers.Postgres\SqlAgent.Providers.Postgres.csproj" />
+    <ProjectReference Include="..\SqlAgent.Api.Mcp\SqlAgent.Api.Mcp.csproj" />
+    <ProjectReference Include="..\SqlAgent.Api.Local\SqlAgent.Api.Local.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

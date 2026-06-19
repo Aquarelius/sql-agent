@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SqlAgent.Api.Local/SqlAgent.Api.Local.csproj" />
+    <Project Path="src/SqlAgent.Api.Mcp/SqlAgent.Api.Mcp.csproj" />
+    <Project Path="src/SqlAgent.Client.Wpf/SqlAgent.Client.Wpf.csproj" />
+    <Project Path="src/SqlAgent.Core/SqlAgent.Core.csproj" />
+    <Project Path="src/SqlAgent.Host/SqlAgent.Host.csproj" />
+    <Project Path="src/SqlAgent.Providers.Postgres/SqlAgent.Providers.Postgres.csproj" />
+    <Project Path="src/SqlAgent.Providers.SqlServer/SqlAgent.Providers.SqlServer.csproj" />
+    <Project Path="src/SqlAgent.Storage/SqlAgent.Storage.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SqlAgent.Tests/SqlAgent.Tests.csproj" />
+  </Folder>
+</Solution>
