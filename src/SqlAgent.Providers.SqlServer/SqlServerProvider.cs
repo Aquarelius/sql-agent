@@ -23,4 +23,61 @@ public class SqlServerProvider : IDatabaseProvider
             return ConnectionTestResult.Fail(ex.Message, sw.ElapsedMilliseconds);
         }
     }
+
+    public async Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default)
+    {
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+
+        var columns = await Query(conn, ct,
+            """
+            SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.IS_NULLABLE
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            JOIN INFORMATION_SCHEMA.TABLES t
+              ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+            WHERE t.TABLE_TYPE = 'BASE TABLE'
+            ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
+                  string.Equals(r.GetString(4), "YES", StringComparison.OrdinalIgnoreCase)));
+
+        var pks = await Query(conn, ct,
+            """
+            SELECT sch.name, tab.name, col.name
+            FROM sys.indexes i
+            JOIN sys.tables tab ON tab.object_id = i.object_id
+            JOIN sys.schemas sch ON sch.schema_id = tab.schema_id
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+            WHERE i.is_primary_key = 1
+            ORDER BY sch.name, tab.name, ic.key_ordinal
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2)));
+
+        var fks = await Query(conn, ct,
+            """
+            SELECT sch.name, tab.name, col.name, rsch.name, rtab.name, rcol.name
+            FROM sys.foreign_key_columns fkc
+            JOIN sys.tables tab ON tab.object_id = fkc.parent_object_id
+            JOIN sys.schemas sch ON sch.schema_id = tab.schema_id
+            JOIN sys.columns col ON col.object_id = fkc.parent_object_id AND col.column_id = fkc.parent_column_id
+            JOIN sys.tables rtab ON rtab.object_id = fkc.referenced_object_id
+            JOIN sys.schemas rsch ON rsch.schema_id = rtab.schema_id
+            JOIN sys.columns rcol ON rcol.object_id = fkc.referenced_object_id AND rcol.column_id = fkc.referenced_column_id
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
+
+        return SchemaModel.Build(columns, pks, fks);
+    }
+
+    private static async Task<List<T>> Query<T>(
+        SqlConnection conn, CancellationToken ct, string sql, Func<SqlDataReader, T> map)
+    {
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<T>();
+        while (await reader.ReadAsync(ct))
+            rows.Add(map(reader));
+        return rows;
+    }
 }

@@ -15,8 +15,8 @@ public record ConnectionTestResult(bool Success, string? Error = null, string? S
 }
 
 /// <summary>
-/// Per-dialect database driver. v1 covers connection testing only; schema extraction, SQL
-/// parsing/normalization, and execution land in later CD-50 tasks (T4–T6) on this same interface.
+/// Per-dialect database driver: connection testing (CD-57) and schema extraction (CD-58 T4).
+/// SQL parsing/normalization and execution land in later CD-50 tasks (T5–T6) on this same interface.
 /// </summary>
 public interface IDatabaseProvider
 {
@@ -24,6 +24,9 @@ public interface IDatabaseProvider
 
     /// <summary>Opens and closes a connection to verify the (draft or saved) connection string works.</summary>
     Task<ConnectionTestResult> TestConnectionAsync(string connectionString, CancellationToken ct = default);
+
+    /// <summary>Reads tables, columns, primary keys, and foreign keys into the common <see cref="DatabaseSchema"/> (CD-50 T4).</summary>
+    Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default);
 }
 
 /// <summary>Selects the <see cref="IDatabaseProvider"/> for a stored <see cref="DatabaseProviderType"/>.</summary>
