@@ -38,6 +38,26 @@ public class SchemaModelBuildTests
     }
 
     [Fact]
+    public void Build_maps_a_composite_fk_as_ordered_column_pairs()
+    {
+        // Each local column pairs with the referenced column at the same position — never a cross product.
+        var schema = SchemaModel.Build(
+            columns: [("dbo", "OrderLine", "OrderId", "int", false), ("dbo", "OrderLine", "Sku", "varchar", false)],
+            primaryKeys: [],
+            foreignKeys:
+            [
+                ("dbo", "OrderLine", "OrderId", "dbo", "OrderItem", "OrderId"),
+                ("dbo", "OrderLine", "Sku", "dbo", "OrderItem", "Sku"),
+            ]);
+
+        var fks = schema.Tables.Single().ForeignKeys;
+        Assert.Equal(2, fks.Count);
+        Assert.Equal(
+            [("OrderId", "OrderId"), ("Sku", "Sku")],
+            fks.Select(f => (f.Column, f.ReferencedColumn)));
+    }
+
+    [Fact]
     public void Build_handles_a_table_with_no_keys()
     {
         var schema = SchemaModel.Build(

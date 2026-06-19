@@ -57,16 +57,23 @@ public class PostgresProvider : IDatabaseProvider
             r => (r.GetString(0), r.GetString(1), r.GetString(2)));
 
         var fks = await Query(conn, ct,
+            // pg_catalog, not information_schema: unnesting conkey/confkey together pairs each local
+            // FK column with its referenced column in order. The information_schema join only matches
+            // on constraint name, which cross-products the columns of a composite FK.
             """
-            SELECT tc.table_schema, tc.table_name, kcu.column_name,
-                   ccu.table_schema, ccu.table_name, ccu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
-            JOIN information_schema.constraint_column_usage ccu
-              ON ccu.constraint_name = tc.constraint_name AND ccu.constraint_schema = tc.constraint_schema
-            WHERE tc.constraint_type = 'FOREIGN KEY'
-              AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+            SELECT ns.nspname, cl.relname, att.attname,
+                   fns.nspname, fcl.relname, fatt.attname
+            FROM pg_constraint con
+            JOIN pg_class cl ON cl.oid = con.conrelid
+            JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+            JOIN pg_class fcl ON fcl.oid = con.confrelid
+            JOIN pg_namespace fns ON fns.oid = fcl.relnamespace
+            JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(local_attnum, ref_attnum, ord) ON true
+            JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.local_attnum
+            JOIN pg_attribute fatt ON fatt.attrelid = con.confrelid AND fatt.attnum = k.ref_attnum
+            WHERE con.contype = 'f'
+              AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY ns.nspname, cl.relname, con.conname, k.ord
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
 
