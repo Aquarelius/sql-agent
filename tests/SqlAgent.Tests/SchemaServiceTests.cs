@@ -15,6 +15,10 @@ file sealed class SchemaFakeProvider(DatabaseProviderType type, DatabaseSchema s
 
     public Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default)
         => Task.FromResult(schema);
+
+    public Task<QueryResultSet> ExecuteQueryAsync(
+        string connectionString, string sql, QueryExecutionOptions options, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }
 
 public class SchemaServiceTests

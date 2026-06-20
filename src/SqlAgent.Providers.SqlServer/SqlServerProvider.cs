@@ -70,6 +70,16 @@ public class SqlServerProvider : IDatabaseProvider
         return SchemaModel.Build(columns, pks, fks);
     }
 
+    public async Task<QueryResultSet> ExecuteQueryAsync(
+        string connectionString, string sql, QueryExecutionOptions options, CancellationToken ct = default)
+    {
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = options.CommandTimeoutSeconds };
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await ResultSetReader.ReadAsync(reader, options.MaxRows, ct);
+    }
+
     private static async Task<List<T>> Query<T>(
         SqlConnection conn, CancellationToken ct, string sql, Func<SqlDataReader, T> map)
     {

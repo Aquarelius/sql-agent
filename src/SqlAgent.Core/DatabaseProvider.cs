@@ -27,6 +27,14 @@ public interface IDatabaseProvider
 
     /// <summary>Reads tables, columns, primary keys, and foreign keys into the common <see cref="DatabaseSchema"/> (CD-50 T4).</summary>
     Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default);
+
+    /// <summary>
+    /// Executes already policy-approved SQL (CD-50 T6) and returns the result set, honoring
+    /// <see cref="QueryExecutionOptions.MaxRows"/> and the command timeout. Cancellation (timeout or
+    /// caller) flows through <paramref name="ct"/> as <see cref="OperationCanceledException"/>.
+    /// </summary>
+    Task<QueryResultSet> ExecuteQueryAsync(
+        string connectionString, string sql, QueryExecutionOptions options, CancellationToken ct = default);
 }
 
 /// <summary>Selects the <see cref="IDatabaseProvider"/> for a stored <see cref="DatabaseProviderType"/>.</summary>
