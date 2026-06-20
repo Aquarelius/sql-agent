@@ -126,6 +126,19 @@ public class SqlPolicyValidatorTests
     }
 
     [Fact]
+    public void Inner_cte_does_not_mask_outer_hidden_table_of_same_name()
+    {
+        // Regression (CD-59 re-review): the CTE `secrets` is defined only inside the EXISTS subquery,
+        // so it must NOT mask the outer real `secrets` reference. The outer hidden table must be denied.
+        var d = Validate(
+            "SELECT * FROM secrets WHERE EXISTS (WITH secrets AS (SELECT 1) SELECT 1 FROM secrets)",
+            isVisible: Visible("secrets"));
+        Assert.False(d.Allowed);
+        Assert.Equal("policy_denied_hidden_table", d.DenyCode);
+        Assert.Contains(d.ReferencedTables, t => t.Name == "secrets");
+    }
+
+    [Fact]
     public void Cte_does_not_mask_hidden_table_inside_its_body()
     {
         // The CTE alias is dropped, but the hidden `secrets` read inside the body is still caught.
