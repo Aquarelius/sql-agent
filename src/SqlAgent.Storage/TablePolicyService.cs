@@ -56,6 +56,10 @@ public class TablePolicyService(
         }
         policy.IsVisible = isVisible;
         await db.SaveChangesAsync(ct);
+
+        // Invalidate any cached schema so a now-hidden table can't survive in a stale SchemaCache entry
+        // (CD-51 Story 1.5). The next GetOrRefresh re-extracts under the updated policy.
+        await db.SchemaCaches.Where(c => c.DatabaseConnectionId == connectionId).ExecuteDeleteAsync(ct);
         return true;
     }
 }

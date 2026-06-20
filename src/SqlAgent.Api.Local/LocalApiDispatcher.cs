@@ -51,6 +51,7 @@ public class LocalApiDispatcher(
         "delete_database" => DeleteDatabaseAsync(Params<DeleteDatabaseParams>(request), ct),
         "test_connection" => TestConnectionAsync(Params<TestConnectionParams>(request), ct),
         "describe_schema" => DescribeSchemaAsync(Params<DescribeSchemaParams>(request), ct),
+        "refresh_schema" => RefreshSchemaAsync(Params<DescribeSchemaParams>(request), ct),
         "execute_sql" => ExecuteSqlAsync(Params<ExecuteSqlParams>(request), ct),
         "list_table_policies" => ListTablePoliciesAsync(Params<ListTablePoliciesParams>(request), ct),
         "set_table_policy" => SetTablePolicyAsync(Params<SetTablePolicyParams>(request), ct),
@@ -116,6 +117,14 @@ public class LocalApiDispatcher(
     private async Task<LocalApiResponse> DescribeSchemaAsync(DescribeSchemaParams p, CancellationToken ct)
     {
         var s = await schema.GetVisibleSchemaAsync(p.Id, ct);
+        return s is null ? NotFound(p.Id) : Ok(ToDto(s));
+    }
+
+    // Manual refresh (CD-51 Story 1.5): re-extracts and re-caches the filtered schema, returning the new
+    // description. Reuses DescribeSchemaParams (id only) and the SchemaDto response.
+    private async Task<LocalApiResponse> RefreshSchemaAsync(DescribeSchemaParams p, CancellationToken ct)
+    {
+        var s = await schema.RefreshAsync(p.Id, ct);
         return s is null ? NotFound(p.Id) : Ok(ToDto(s));
     }
 

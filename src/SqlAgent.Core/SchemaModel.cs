@@ -3,18 +3,23 @@ namespace SqlAgent.Core;
 /// <summary>Provider-neutral description of a database's structure (CD-50 T4).</summary>
 public record DatabaseSchema(IReadOnlyList<SchemaTable> Tables);
 
-/// <summary>One base table, with its columns, primary-key column order, and outgoing foreign keys.</summary>
+/// <summary>One base table, with its columns, primary-key column order, outgoing foreign keys, and indexes.</summary>
 public record SchemaTable(
     string Schema,
     string Name,
     IReadOnlyList<SchemaColumn> Columns,
     IReadOnlyList<string> PrimaryKey,
-    IReadOnlyList<ForeignKey> ForeignKeys);
+    IReadOnlyList<ForeignKey> ForeignKeys,
+    IReadOnlyList<SchemaIndex> Indexes);
 
 public record SchemaColumn(string Name, string DataType, bool IsNullable);
 
 /// <summary>A column pointing at another table — the "basic relationship" the model carries.</summary>
 public record ForeignKey(string Column, string ReferencedSchema, string ReferencedTable, string ReferencedColumn);
+
+/// <summary>A non-PK index over one or more of the table's own columns (CD-51 Story 1.5). The primary key is
+/// already carried by <see cref="SchemaTable.PrimaryKey"/>, so providers omit the PK index here.</summary>
+public record SchemaIndex(string Name, IReadOnlyList<string> Columns, bool IsUnique);
 
 /// <summary>
 /// Assembles and filters the common <see cref="DatabaseSchema"/>. The provider drivers run their
@@ -29,7 +34,10 @@ public static class SchemaModel
     public static DatabaseSchema Build(
         IEnumerable<(string Schema, string Table, string Column, string DataType, bool Nullable)> columns,
         IEnumerable<(string Schema, string Table, string Column)> primaryKeys,
-        IEnumerable<(string Schema, string Table, string Column, string RefSchema, string RefTable, string RefColumn)> foreignKeys)
+        IEnumerable<(string Schema, string Table, string Column, string RefSchema, string RefTable, string RefColumn)> foreignKeys,
+        // Index rows are (schema, table, index, column, ordinal, unique). Providers that don't expose index
+        // metadata pass nothing — the table simply carries no indexes. Rows must be ORDER BY index, ordinal.
+        IEnumerable<(string Schema, string Table, string Index, string Column, bool Unique)>? indexes = null)
     {
         var pkByTable = primaryKeys
             .GroupBy(p => (p.Schema, p.Table))
@@ -41,6 +49,14 @@ public static class SchemaModel
                 g => g.Key,
                 g => g.Select(f => new ForeignKey(f.Column, f.RefSchema, f.RefTable, f.RefColumn)).ToList());
 
+        var ixByTable = (indexes ?? [])
+            .GroupBy(i => (i.Schema, i.Table))
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(i => i.Index)
+                      .Select(ix => new SchemaIndex(ix.Key, ix.Select(c => c.Column).ToList(), ix.First().Unique))
+                      .ToList());
+
         var tables = columns
             .GroupBy(c => (c.Schema, c.Table))
             .Select(g => new SchemaTable(
@@ -48,7 +64,8 @@ public static class SchemaModel
                 g.Key.Table,
                 g.Select(c => new SchemaColumn(c.Column, c.DataType, c.Nullable)).ToList(),
                 pkByTable.GetValueOrDefault(g.Key, []),
-                fkByTable.GetValueOrDefault(g.Key, [])))
+                fkByTable.GetValueOrDefault(g.Key, []),
+                ixByTable.GetValueOrDefault(g.Key, [])))
             .ToList();
 
         return new DatabaseSchema(tables);

@@ -67,7 +67,21 @@ public class SqlServerProvider : IDatabaseProvider
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
 
-        return SchemaModel.Build(columns, pks, fks);
+        // Non-PK indexes only (the PK is already carried separately). Skip heaps/stats (index_id 0).
+        var indexes = await Query(conn, ct,
+            """
+            SELECT sch.name, tab.name, i.name, col.name, i.is_unique
+            FROM sys.indexes i
+            JOIN sys.tables tab ON tab.object_id = i.object_id
+            JOIN sys.schemas sch ON sch.schema_id = tab.schema_id
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+            JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+            WHERE i.is_primary_key = 0 AND i.index_id > 0 AND ic.is_included_column = 0
+            ORDER BY sch.name, tab.name, i.name, ic.key_ordinal
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4)));
+
+        return SchemaModel.Build(columns, pks, fks, indexes);
     }
 
     public async Task<QueryResultSet> ExecuteQueryAsync(
