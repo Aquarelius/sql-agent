@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SqlAgent.Api.Local;
 using SqlAgent.Core;
 using SqlAgent.Providers.Postgres;
 using SqlAgent.Providers.SqlServer;
@@ -25,6 +26,10 @@ builder.Services.AddSingleton<IDatabaseProvider, PostgresProvider>();
 builder.Services.AddSingleton<IDatabaseProviderRegistry, DatabaseProviderRegistry>();
 builder.Services.AddScoped<DatabaseConnectionService>();
 builder.Services.AddScoped<QueryExecutionService>();
+builder.Services.AddScoped<ConnectionTester>();
+builder.Services.AddScoped<SchemaService>();
+builder.Services.AddScoped<TablePolicyService>();
+builder.Services.AddScoped<LocalApiDispatcher>();
 
 if (OperatingSystem.IsWindows())
     builder.Services.AddScoped<ISecretStore, DpapiSecretStore>();
@@ -52,9 +57,21 @@ internal sealed class SqlAgentWorker(
             logger.LogInformation("SQL Agent host started with {ConnectionCount} configured connection(s).", configuredConnections);
         }
 
+        // Serve the local named-pipe API that the WPF client talks to (CD-50 T8/T9). The server handles one
+        // connection at a time, so we dispose the previous request scope when the next connection asks for a
+        // dispatcher — at most one scope is live, no leak.
+        // ponytail: serial-scope reuse relies on NamedPipeApiServer serving connections one at a time.
+        IServiceScope? connectionScope = null;
+        var pipe = new NamedPipeApiServer(() =>
+        {
+            connectionScope?.Dispose();
+            connectionScope = services.CreateScope();
+            return connectionScope.ServiceProvider.GetRequiredService<LocalApiDispatcher>();
+        });
+
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+            await pipe.RunAsync(stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -62,6 +79,7 @@ internal sealed class SqlAgentWorker(
         }
         finally
         {
+            connectionScope?.Dispose();
             lifetime.StopApplication();
         }
     }

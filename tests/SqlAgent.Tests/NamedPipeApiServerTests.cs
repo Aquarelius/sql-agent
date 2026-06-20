@@ -27,7 +27,8 @@ public class NamedPipeApiServerTests
             connections,
             new ConnectionTester(connections, registry),
             new SchemaService(connections, registry, db),
-            new QueryExecutionService(connections, registry, db));
+            new QueryExecutionService(connections, registry, db),
+            new TablePolicyService(connections, registry, db));
     }
 
     [Fact]

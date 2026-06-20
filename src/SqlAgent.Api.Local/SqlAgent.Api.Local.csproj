@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\SqlAgent.Api.Local.Contracts\SqlAgent.Api.Local.Contracts.csproj" />
     <ProjectReference Include="..\SqlAgent.Core\SqlAgent.Core.csproj" />
     <ProjectReference Include="..\SqlAgent.Storage\SqlAgent.Storage.csproj" />
   </ItemGroup>

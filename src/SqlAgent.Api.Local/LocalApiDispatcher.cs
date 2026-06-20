@@ -14,7 +14,8 @@ public class LocalApiDispatcher(
     DatabaseConnectionService connections,
     ConnectionTester connectionTester,
     SchemaService schema,
-    QueryExecutionService queries)
+    QueryExecutionService queries,
+    TablePolicyService tablePolicies)
 {
     /// <summary>Parses, routes, and serializes one request. Never throws — failures become error responses.</summary>
     public async Task<string> HandleAsync(string requestJson, CancellationToken ct = default)
@@ -51,6 +52,8 @@ public class LocalApiDispatcher(
         "test_connection" => TestConnectionAsync(Params<TestConnectionParams>(request), ct),
         "describe_schema" => DescribeSchemaAsync(Params<DescribeSchemaParams>(request), ct),
         "execute_sql" => ExecuteSqlAsync(Params<ExecuteSqlParams>(request), ct),
+        "list_table_policies" => ListTablePoliciesAsync(Params<ListTablePoliciesParams>(request), ct),
+        "set_table_policy" => SetTablePolicyAsync(Params<SetTablePolicyParams>(request), ct),
         _ => Task.FromResult(LocalApiResponse.Fail(ApiErrorCodes.UnknownOp, $"Unknown operation '{request.Op}'.")),
     };
 
@@ -126,6 +129,22 @@ public class LocalApiDispatcher(
         // Re-map only the "no config row" code to the API's database_not_found; pass the rest through verbatim.
         var code = r.ErrorCode == "connection_not_found" ? ApiErrorCodes.DatabaseNotFound : r.ErrorCode!;
         return LocalApiResponse.Fail(code, r.ErrorMessage ?? "Query failed.");
+    }
+
+    private async Task<LocalApiResponse> ListTablePoliciesAsync(ListTablePoliciesParams p, CancellationToken ct)
+    {
+        var tables = await tablePolicies.ListAsync(p.Id, ct);
+        return tables is null
+            ? NotFound(p.Id)
+            : Ok(new TablePoliciesDto(tables.Select(t => new TablePolicyDto(t.Schema, t.Table, t.IsVisible)).ToList()));
+    }
+
+    private async Task<LocalApiResponse> SetTablePolicyAsync(SetTablePolicyParams p, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(p.Table))
+            return LocalApiResponse.Fail(ApiErrorCodes.BadRequest, "table is required.");
+        var ok = await tablePolicies.SetVisibilityAsync(p.Id, p.Schema ?? "", p.Table, p.IsVisible, ct);
+        return ok ? Ok(new TablePolicyDto(p.Schema ?? "", p.Table, p.IsVisible)) : NotFound(p.Id);
     }
 
     // ---- helpers ----
