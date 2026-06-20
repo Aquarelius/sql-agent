@@ -29,7 +29,12 @@ builder.Services.AddScoped<QueryExecutionService>();
 builder.Services.AddScoped<ConnectionTester>();
 builder.Services.AddScoped<SchemaService>();
 builder.Services.AddScoped<TablePolicyService>();
+builder.Services.AddScoped<NlQueryService>();
 builder.Services.AddScoped<LocalApiDispatcher>();
+
+// ponytail: fail-closed LLM seam so ask_database resolves and returns a stable llm_error. Swap for the real
+// vendor gateway when LLM-provider selection lands (ADR pending, CD-51) — no contract change needed here.
+builder.Services.AddSingleton<ILlmSqlGateway, UnavailableLlmSqlGateway>();
 
 if (OperatingSystem.IsWindows())
     builder.Services.AddScoped<ISecretStore, DpapiSecretStore>();
@@ -39,6 +44,15 @@ else
 builder.Services.AddHostedService<SqlAgentWorker>();
 
 await builder.Build().RunAsync();
+
+/// <summary>Placeholder until a real LLM gateway is wired (LLM-provider ADR pending, CD-51). NlQueryService
+/// turns this into a stable, user-safe llm_error, so ask_database is contract-complete and fails closed rather
+/// than half-wired.</summary>
+internal sealed class UnavailableLlmSqlGateway : ILlmSqlGateway
+{
+    public Task<LlmSqlResponse> GenerateSqlAsync(LlmSqlRequest request, CancellationToken ct = default) =>
+        throw new NotSupportedException("No LLM provider is configured on this server.");
+}
 
 internal sealed class SqlAgentWorker(
     IServiceProvider services,

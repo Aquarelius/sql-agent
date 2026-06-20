@@ -8,6 +8,13 @@ using SqlAgent.Storage;
 
 namespace SqlAgent.Tests;
 
+/// <summary>Unused LLM seam: the pipe test only exercises list_databases, so ask_database never calls this.</summary>
+file sealed class UnusedGateway : ILlmSqlGateway
+{
+    public Task<LlmSqlResponse> GenerateSqlAsync(LlmSqlRequest request, CancellationToken ct = default) =>
+        Task.FromResult(LlmSqlResponse.Generated("SELECT 1"));
+}
+
 /// <summary>
 /// Transport-level check: the named-pipe server frames newline-delimited JSON and round-trips a real
 /// request to a real <see cref="LocalApiDispatcher"/>. Windows-only (named pipes); the dispatcher's own
@@ -23,12 +30,15 @@ public class NamedPipeApiServerTests
         db.Database.EnsureCreated();
         var connections = new DatabaseConnectionService(db, new InMemorySecretStore());
         var registry = new DatabaseProviderRegistry(Array.Empty<IDatabaseProvider>());
+        var schema = new SchemaService(connections, registry, db);
+        var queries = new QueryExecutionService(connections, registry, db);
         return new LocalApiDispatcher(
             connections,
             new ConnectionTester(connections, registry),
-            new SchemaService(connections, registry, db),
-            new QueryExecutionService(connections, registry, db),
-            new TablePolicyService(connections, registry, db));
+            schema,
+            queries,
+            new TablePolicyService(connections, registry, db),
+            new NlQueryService(connections, schema, queries, new UnusedGateway()));
     }
 
     [Fact]

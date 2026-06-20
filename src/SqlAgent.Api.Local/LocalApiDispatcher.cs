@@ -15,7 +15,8 @@ public class LocalApiDispatcher(
     ConnectionTester connectionTester,
     SchemaService schema,
     QueryExecutionService queries,
-    TablePolicyService tablePolicies)
+    TablePolicyService tablePolicies,
+    NlQueryService nlQueries)
 {
     /// <summary>Parses, routes, and serializes one request. Never throws — failures become error responses.</summary>
     public async Task<string> HandleAsync(string requestJson, CancellationToken ct = default)
@@ -53,6 +54,7 @@ public class LocalApiDispatcher(
         "describe_schema" => DescribeSchemaAsync(Params<DescribeSchemaParams>(request), ct),
         "refresh_schema" => RefreshSchemaAsync(Params<DescribeSchemaParams>(request), ct),
         "execute_sql" => ExecuteSqlAsync(Params<ExecuteSqlParams>(request), ct),
+        "ask_database" => AskDatabaseAsync(Params<AskDatabaseParams>(request), ct),
         "list_table_policies" => ListTablePoliciesAsync(Params<ListTablePoliciesParams>(request), ct),
         "set_table_policy" => SetTablePolicyAsync(Params<SetTablePolicyParams>(request), ct),
         _ => Task.FromResult(LocalApiResponse.Fail(ApiErrorCodes.UnknownOp, $"Unknown operation '{request.Op}'.")),
@@ -140,6 +142,16 @@ public class LocalApiDispatcher(
         return LocalApiResponse.Fail(code, r.ErrorMessage ?? "Query failed.");
     }
 
+    // ask_database delegates the whole flow to Core's NlQueryService (no policy logic duplicated here) and
+    // maps its one-outcome result to the wire DTO. All three outcomes — query_result, clarification_required,
+    // error — ride on a successful envelope: like test_connection, a clarification or policy rejection is a
+    // normal answer, not a transport error, and ok=false would drop the generated_sql the error outcome echoes.
+    private async Task<LocalApiResponse> AskDatabaseAsync(AskDatabaseParams p, CancellationToken ct)
+    {
+        var r = await nlQueries.AskAsync(p.Id, p.Question, ct);
+        return Ok(ToDto(r));
+    }
+
     private async Task<LocalApiResponse> ListTablePoliciesAsync(ListTablePoliciesParams p, CancellationToken ct)
     {
         var tables = await tablePolicies.ListAsync(p.Id, ct);
@@ -182,6 +194,18 @@ public class LocalApiDispatcher(
         t.PrimaryKey,
         t.ForeignKeys.Select(f => new ForeignKeyDto(f.Column, f.ReferencedSchema, f.ReferencedTable, f.ReferencedColumn)).ToList()))
         .ToList());
+
+    private static AskDatabaseResultDto ToDto(NlQueryResult r) => new(
+        ToDto(r.Kind), r.GeneratedSql, r.ClarificationQuestion, r.ErrorCode, r.ErrorMessage,
+        r.Columns, r.Rows, r.RowCount, r.Truncated, r.ElapsedMs);
+
+    private static NlResponseKindDto ToDto(NlResponseKind k) => k switch
+    {
+        NlResponseKind.QueryResult => NlResponseKindDto.QueryResult,
+        NlResponseKind.ClarificationRequired => NlResponseKindDto.ClarificationRequired,
+        NlResponseKind.Error => NlResponseKindDto.Error,
+        _ => throw new ArgumentOutOfRangeException(nameof(k), k, "Unmapped NL response kind."),
+    };
 
     private static DatabaseProviderTypeDto ToDto(DatabaseProviderType t) => t switch
     {

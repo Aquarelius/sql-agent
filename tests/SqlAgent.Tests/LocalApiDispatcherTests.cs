@@ -30,10 +30,20 @@ file sealed class ApiFakeProvider(
         => Task.FromResult(result ?? new QueryResultSet(["id"], [new object?[] { 1 }], false));
 }
 
+/// <summary>LLM seam double for the ask_database contract tests: returns a canned response (or throws).</summary>
+file sealed class ApiFakeGateway(LlmSqlResponse? response = null, Exception? throws = null) : ILlmSqlGateway
+{
+    public Task<LlmSqlResponse> GenerateSqlAsync(LlmSqlRequest request, CancellationToken ct = default)
+    {
+        if (throws is not null) throw throws;
+        return Task.FromResult(response ?? LlmSqlResponse.Generated("SELECT 1"));
+    }
+}
+
 public class LocalApiDispatcherTests
 {
     private static (LocalApiDispatcher dispatcher, DatabaseConnectionService connections, SqlAgentDbContext db, SqliteConnection conn)
-        NewDispatcher(IDatabaseProvider provider)
+        NewDispatcher(IDatabaseProvider provider, ILlmSqlGateway? gateway = null)
     {
         var conn = new SqliteConnection("DataSource=:memory:");
         conn.Open();
@@ -42,12 +52,15 @@ public class LocalApiDispatcherTests
 
         var connections = new DatabaseConnectionService(db, new InMemorySecretStore());
         var registry = new DatabaseProviderRegistry([provider]);
+        var schema = new SchemaService(connections, registry, db);
+        var queries = new QueryExecutionService(connections, registry, db);
         var dispatcher = new LocalApiDispatcher(
             connections,
             new ConnectionTester(connections, registry),
-            new SchemaService(connections, registry, db),
-            new QueryExecutionService(connections, registry, db),
-            new TablePolicyService(connections, registry, db));
+            schema,
+            queries,
+            new TablePolicyService(connections, registry, db),
+            new NlQueryService(connections, schema, queries, gateway ?? new ApiFakeGateway()));
         return (dispatcher, connections, db, conn);
     }
 
@@ -225,6 +238,74 @@ public class LocalApiDispatcherTests
 
         Assert.False(r.Ok);
         Assert.Equal(ApiErrorCodes.DatabaseNotFound, r.Error!.Code);
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Ask_database_returns_query_result_with_generated_sql()
+    {
+        var schema = new DatabaseSchema([
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+        ]);
+        var result = new QueryResultSet(["id"], [new object?[] { 7 }], false);
+        var (d, connections, _, conn) = NewDispatcher(
+            new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema, result: result),
+            new ApiFakeGateway(LlmSqlResponse.Generated("SELECT id FROM orders")));
+        var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
+
+        var r = await CallAsync(d, "ask_database", new { id = created.Id, question = "show the orders" });
+
+        Assert.True(r.Ok); // a normal answer rides on a successful envelope
+        var dto = Data<AskDatabaseResultDto>(r);
+        Assert.Equal(NlResponseKindDto.QueryResult, dto.Kind);
+        Assert.Equal("SELECT id FROM orders", dto.GeneratedSql); // echoed so the user can audit it
+        Assert.Equal(["id"], dto.Columns);
+        Assert.Equal(1, dto.RowCount);
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Ask_database_ambiguous_question_returns_clarification()
+    {
+        var schema = new DatabaseSchema([
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+        ]);
+        var (d, connections, _, conn) = NewDispatcher(
+            new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema),
+            new ApiFakeGateway(LlmSqlResponse.Clarify("Which time range?")));
+        var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
+
+        var r = await CallAsync(d, "ask_database", new { id = created.Id, question = "how are things" });
+
+        Assert.True(r.Ok);
+        var dto = Data<AskDatabaseResultDto>(r);
+        Assert.Equal(NlResponseKindDto.ClarificationRequired, dto.Kind);
+        Assert.Equal("Which time range?", dto.ClarificationQuestion);
+        Assert.Null(dto.GeneratedSql); // no SQL ran
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Ask_database_generated_write_on_readonly_returns_error_echoing_sql()
+    {
+        var schema = new DatabaseSchema([
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+        ]);
+        var (d, connections, _, conn) = NewDispatcher(
+            new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema),
+            new ApiFakeGateway(LlmSqlResponse.Generated("UPDATE orders SET id = 0")));
+        var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
+
+        var r = await CallAsync(d, "ask_database", new { id = created.Id, question = "wipe the orders" });
+
+        Assert.True(r.Ok); // the error outcome is data, not a transport failure — so it can carry the SQL
+        var dto = Data<AskDatabaseResultDto>(r);
+        Assert.Equal(NlResponseKindDto.Error, dto.Kind);
+        Assert.Equal("policy_denied_readonly", dto.ErrorCode); // Core's stable code, surfaced verbatim
+        Assert.Equal("UPDATE orders SET id = 0", dto.GeneratedSql); // echoed so the user can audit what was rejected
 
         conn.Dispose();
     }
