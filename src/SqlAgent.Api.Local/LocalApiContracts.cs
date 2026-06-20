@@ -1,0 +1,94 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace SqlAgent.Api.Local;
+
+/// <summary>
+/// Wire contract for the local named-pipe API (CD-50 T8, ADR-0003). These DTOs are the versionable
+/// boundary between Core and the WPF client: they depend only on primitives, never on Core entities
+/// or WPF view models, so either side can evolve without breaking the pipe. JSON is snake_case and
+/// newline-delimited (one compact request object per line, one response object per line).
+/// </summary>
+public static class LocalApiContract
+{
+    /// <summary>Bumped only on a breaking wire change; echoed back in every response so clients can gate.</summary>
+    public const int Version = 1;
+
+    /// <summary>Default pipe name. The host may override, but this is the agreed default for the WPF client.</summary>
+    public const string DefaultPipeName = "SqlAgent.LocalApi";
+
+    /// <summary>Shared serializer options: snake_case, compact, enums as strings.</summary>
+    public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+    };
+}
+
+/// <summary>Stable, envelope-level error codes. Operation-specific codes (policy_denied_*, execution_*)
+/// pass through verbatim from Core so the client sees one stable code set regardless of where it originated.</summary>
+public static class ApiErrorCodes
+{
+    public const string UnknownOp = "unknown_op";
+    public const string BadRequest = "bad_request";
+    public const string DatabaseNotFound = "database_not_found";
+    public const string ConnectionFailed = "connection_failed";
+    public const string InternalError = "internal_error";
+}
+
+/// <summary>A single request: an operation name and its raw params (decoded per-op by the dispatcher).</summary>
+public record LocalApiRequest(string Op, JsonElement? Params);
+
+/// <summary>A single response. Exactly one of <see cref="Data"/> / <see cref="Error"/> is set.</summary>
+public record LocalApiResponse(int Version, bool Ok, JsonElement? Data, ApiError? Error)
+{
+    public static LocalApiResponse Success(JsonElement data) => new(LocalApiContract.Version, true, data, null);
+    public static LocalApiResponse Fail(string code, string message) =>
+        new(LocalApiContract.Version, false, null, new ApiError(code, message));
+}
+
+public record ApiError(string Code, string Message);
+
+// ---- Operation params ----
+
+public record GetDatabaseParams(Guid Id);
+public record DeleteDatabaseParams(Guid Id);
+
+/// <summary>Add (no <see cref="Id"/>) or update (with <see cref="Id"/>) a connection. The secret string is
+/// write-only — it is accepted here but never returned by any read DTO.</summary>
+public record SaveDatabaseParams(
+    Guid? Id, string Name, DatabaseProviderTypeDto Provider, bool IsReadOnly, string? ConnectionString);
+
+/// <summary>Test a saved connection (<see cref="Id"/>) or a draft (<see cref="Provider"/> + <see cref="ConnectionString"/>).</summary>
+public record TestConnectionParams(Guid? Id, DatabaseProviderTypeDto? Provider, string? ConnectionString);
+
+public record DescribeSchemaParams(Guid Id);
+
+public record ExecuteSqlParams(Guid Id, string Sql);
+
+// ---- Result DTOs ----
+
+/// <summary>String mirror of Core's provider enum, so the wire stays readable and stable across enum edits.</summary>
+public enum DatabaseProviderTypeDto { SqlServer, Postgres }
+
+/// <summary>Read model for a configured database. Never carries the connection-string secret.</summary>
+public record DatabaseDto(
+    Guid Id, string Name, DatabaseProviderTypeDto Provider, bool IsReadOnly, bool HasSecret,
+    DateTime CreatedAt, DateTime UpdatedAt);
+
+public record ConnectionTestDto(bool Success, string? Error, string? ServerVersion, long ElapsedMs);
+
+public record SchemaDto(IReadOnlyList<TableDto> Tables);
+public record TableDto(
+    string Schema, string Name, IReadOnlyList<ColumnDto> Columns,
+    IReadOnlyList<string> PrimaryKey, IReadOnlyList<ForeignKeyDto> ForeignKeys);
+public record ColumnDto(string Name, string DataType, bool IsNullable);
+public record ForeignKeyDto(string Column, string ReferencedSchema, string ReferencedTable, string ReferencedColumn);
+
+/// <summary>Query result. <see cref="Truncated"/> is how a too-large result surfaces: rows are capped, not errored.</summary>
+public record QueryResultDto(
+    string Sql, IReadOnlyList<string> Columns, IReadOnlyList<IReadOnlyList<object?>> Rows,
+    int RowCount, bool Truncated, long ElapsedMs);
+
+public record DeletedDto(bool Deleted);
