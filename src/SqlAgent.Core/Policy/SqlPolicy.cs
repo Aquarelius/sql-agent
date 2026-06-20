@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reflection;
 using SqlParser;
 using SqlParser.Ast;
 using SqlParser.Dialects;
@@ -73,6 +75,15 @@ public static class SqlAnalyzer
                 break;
         }
 
+        // A CTE name is a query-local alias, not a database table. `FROM <cte>` resolves to the CTE even
+        // when a real table shares the name, so drop unqualified references that match a defined CTE.
+        // Schema-qualified names (private.t) are never CTEs and always stay; the real base tables inside
+        // CTE bodies are collected separately, so a hidden table can't hide behind a CTE.
+        var cteNames = CollectCteNames(statement);
+        var tables = collector.References
+            .Where(t => !(t.Schema is null && cteNames.Contains(t.Name)))
+            .ToList();
+
         var kind = statement switch
         {
             Statement.Select => SqlStatementKind.Read,
@@ -80,7 +91,43 @@ public static class SqlAnalyzer
             _ => SqlStatementKind.Other,
         };
 
-        return new ParsedStatement(kind, statement.GetType().Name, collector.References);
+        return new ParsedStatement(kind, statement.GetType().Name, tables);
+    }
+
+    /// <summary>
+    /// Gathers every CTE name defined anywhere in the statement (including nested subqueries). The AST
+    /// visitor never surfaces the <c>WITH</c> clause, so this walks the typed node graph generically and
+    /// records each <c>WITH</c>'s CTE aliases. Comparison is case-insensitive to match SQL identifier rules.
+    /// </summary>
+    private static HashSet<string> CollectCteNames(Statement statement)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Walk(statement, names, new HashSet<object>(ReferenceEqualityComparer.Instance));
+        return names;
+
+        static void Walk(object? node, HashSet<string> names, HashSet<object> seen)
+        {
+            if (node is null or string) return;
+            if (node is IEnumerable sequence)
+            {
+                foreach (var item in sequence) Walk(item, names, seen);
+                return;
+            }
+            if (node.GetType().Namespace?.StartsWith("SqlParser.Ast", StringComparison.Ordinal) != true) return;
+            if (!seen.Add(node)) return;
+
+            if (node is With with)
+                foreach (var cte in with.CteTables) names.Add(cte.Alias.Name.Value);
+
+            foreach (var prop in node.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (prop.GetIndexParameters().Length > 0) continue;
+                object? value;
+                try { value = prop.GetValue(node); }
+                catch { continue; }
+                Walk(value, names, seen);
+            }
+        }
     }
 
     /// <summary>Collects every table reference the visitor reaches, de-duplicated on (schema, name).</summary>

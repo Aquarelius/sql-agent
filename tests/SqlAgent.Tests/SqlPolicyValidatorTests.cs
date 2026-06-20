@@ -113,6 +113,41 @@ public class SqlPolicyValidatorTests
     }
 
     [Fact]
+    public void Cte_named_like_hidden_table_is_allowed_when_only_visible_tables_are_read()
+    {
+        // Regression (CD-59 review): `secrets` here is a CTE alias, not the hidden base table.
+        // The query only reads the visible `orders`, so it must be allowed.
+        var d = Validate(
+            "WITH secrets AS (SELECT * FROM orders) SELECT * FROM secrets",
+            isVisible: Visible("secrets"));
+        Assert.True(d.Allowed);
+        Assert.DoesNotContain(d.ReferencedTables, t => t.Name == "secrets");
+        Assert.Contains(d.ReferencedTables, t => t.Name == "orders");
+    }
+
+    [Fact]
+    public void Cte_does_not_mask_hidden_table_inside_its_body()
+    {
+        // The CTE alias is dropped, but the hidden `secrets` read inside the body is still caught.
+        var d = Validate(
+            "WITH v AS (SELECT * FROM secrets) SELECT * FROM v",
+            isVisible: Visible("secrets"));
+        Assert.False(d.Allowed);
+        Assert.Equal("policy_denied_hidden_table", d.DenyCode);
+    }
+
+    [Fact]
+    public void Schema_qualified_table_is_checked_even_when_a_cte_shares_its_name()
+    {
+        // private.secrets is schema-qualified, so it can never be the CTE — it must still be denied.
+        var d = Validate(
+            "WITH secrets AS (SELECT 1) SELECT * FROM private.secrets",
+            isVisible: Visible("private.secrets"));
+        Assert.False(d.Allowed);
+        Assert.Equal("policy_denied_hidden_table", d.DenyCode);
+    }
+
+    [Fact]
     public void Hidden_table_in_subquery_is_denied()
     {
         var d = Validate(
