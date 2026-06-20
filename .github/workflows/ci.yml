@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet restore SqlAgent.slnx
+      - run: dotnet build SqlAgent.slnx --configuration Release --no-restore
+      - run: dotnet test SqlAgent.slnx --configuration Release --no-build
+
+  provider-fixtures:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sqlagent
+          POSTGRES_USER: sqlagent
+          POSTGRES_PASSWORD: sqlagent_pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sqlagent -d sqlagent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: SqlAgent_pw1
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+    env:
+      SQLAGENT_TEST_POSTGRES: "Host=localhost;Port=5432;Database=sqlagent;Username=sqlagent;Password=sqlagent_pw"
+      SQLAGENT_TEST_SQLSERVER: "Server=localhost,1433;Database=master;User Id=sa;Password=SqlAgent_pw1;TrustServerCertificate=True"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: sleep 45
+      - run: dotnet test tests/SqlAgent.Tests/SqlAgent.Tests.csproj --configuration Release --filter ProviderIntegrationTests

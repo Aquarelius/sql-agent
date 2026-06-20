@@ -1,0 +1,18 @@
+[Unit]
+Description=SQL Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/sqlagent
+ExecStart=/opt/sqlagent/SqlAgent.Host
+Restart=on-failure
+RestartSec=5
+Environment=DOTNET_ENVIRONMENT=Production
+Environment="SqlAgent__Storage__ConnectionString=Data Source=/var/lib/sqlagent/sqlagent.db"
+User=sqlagent
+Group=sqlagent
+
+[Install]
+WantedBy=multi-user.target
