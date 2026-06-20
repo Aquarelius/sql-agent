@@ -29,8 +29,10 @@ public class PostgresProvider : IDatabaseProvider
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync(ct);
 
-        // System schemas are noise to the LLM; only describe user tables.
-        const string userSchemas = "c.table_schema NOT IN ('pg_catalog', 'information_schema')";
+        // System schemas are noise to the LLM; only describe user tables. The 'pg_' prefix is
+        // reserved for system schemas (pg_catalog, pg_toast, pg_temp_*), so excluding it plus
+        // information_schema hides every catalog/temp object while keeping all user schemas.
+        const string userSchemas = @"c.table_schema NOT LIKE 'pg\_%' AND c.table_schema <> 'information_schema'";
 
         var columns = await Query(conn, ct,
             $"""
@@ -51,7 +53,7 @@ public class PostgresProvider : IDatabaseProvider
             JOIN information_schema.key_column_usage kcu
               ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
             WHERE tc.constraint_type = 'PRIMARY KEY'
-              AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+              AND tc.table_schema NOT LIKE 'pg\_%' AND tc.table_schema <> 'information_schema'
             ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2)));
@@ -72,7 +74,7 @@ public class PostgresProvider : IDatabaseProvider
             JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.local_attnum
             JOIN pg_attribute fatt ON fatt.attrelid = con.confrelid AND fatt.attnum = k.ref_attnum
             WHERE con.contype = 'f'
-              AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+              AND ns.nspname NOT LIKE 'pg\_%' AND ns.nspname <> 'information_schema'
             ORDER BY ns.nspname, cl.relname, con.conname, k.ord
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
