@@ -100,9 +100,9 @@ public class McpToolServiceTests
         var schema = new DatabaseSchema([
             new SchemaTable("public", "orders",
                 [new SchemaColumn("id", "int", false), new SchemaColumn("total", "numeric", true)],
-                ["id"], []),
+                ["id"], [], []),
             new SchemaTable("public", "secrets",
-                [new SchemaColumn("token", "text", false)], [], []),
+                [new SchemaColumn("token", "text", false)], [], [], []),
         ]);
         var (tools, connections, _) = Build(db, new ToolFakeProvider(schema));
         var created = await connections.CreateAsync(

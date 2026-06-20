@@ -77,7 +77,25 @@ public class PostgresProvider : IDatabaseProvider
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
 
-        return SchemaModel.Build(columns, pks, fks);
+        // Non-PK indexes only (the PK is carried separately). Expression-index parts (attnum 0) drop out of
+        // the att join, so a purely expression index simply contributes no columns here.
+        var indexes = await Query(conn, ct,
+            """
+            SELECT ns.nspname, tab.relname, idx.relname, att.attname, ix.indisunique
+            FROM pg_index ix
+            JOIN pg_class idx ON idx.oid = ix.indexrelid
+            JOIN pg_class tab ON tab.oid = ix.indrelid
+            JOIN pg_namespace ns ON ns.oid = tab.relnamespace
+            JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+            JOIN pg_attribute att ON att.attrelid = tab.oid AND att.attnum = k.attnum
+            WHERE ix.indisprimary = false
+              AND att.attnum > 0
+              AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY ns.nspname, tab.relname, idx.relname, k.ord
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4)));
+
+        return SchemaModel.Build(columns, pks, fks, indexes);
     }
 
     public async Task<QueryResultSet> ExecuteQueryAsync(
