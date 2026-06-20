@@ -29,8 +29,10 @@ public class PostgresProvider : IDatabaseProvider
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync(ct);
 
-        // System schemas are noise to the LLM; only describe user tables.
-        const string userSchemas = "c.table_schema NOT IN ('pg_catalog', 'information_schema')";
+        // System schemas are noise to the LLM; only describe user tables. The 'pg_' prefix is
+        // reserved for system schemas (pg_catalog, pg_toast, pg_temp_*), so excluding it plus
+        // information_schema hides every catalog/temp object while keeping all user schemas.
+        const string userSchemas = @"c.table_schema NOT LIKE 'pg\_%' AND c.table_schema <> 'information_schema'";
 
         var columns = await Query(conn, ct,
             $"""
@@ -53,7 +55,7 @@ public class PostgresProvider : IDatabaseProvider
             JOIN information_schema.key_column_usage kcu
               ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
             WHERE tc.constraint_type = 'PRIMARY KEY'
-              AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')
+              AND tc.table_schema NOT LIKE 'pg\_%' AND tc.table_schema <> 'information_schema'
             ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2)));
@@ -74,12 +76,30 @@ public class PostgresProvider : IDatabaseProvider
             JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.local_attnum
             JOIN pg_attribute fatt ON fatt.attrelid = con.confrelid AND fatt.attnum = k.ref_attnum
             WHERE con.contype = 'f'
-              AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+              AND ns.nspname NOT LIKE 'pg\_%' AND ns.nspname <> 'information_schema'
             ORDER BY ns.nspname, cl.relname, con.conname, k.ord
             """,
             r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
 
-        return SchemaModel.Build(columns, pks, fks);
+        // Non-PK indexes only (the PK is carried separately). Expression-index parts (attnum 0) drop out of
+        // the att join, so a purely expression index simply contributes no columns here.
+        var indexes = await Query(conn, ct,
+            """
+            SELECT ns.nspname, tab.relname, idx.relname, att.attname, ix.indisunique
+            FROM pg_index ix
+            JOIN pg_class idx ON idx.oid = ix.indexrelid
+            JOIN pg_class tab ON tab.oid = ix.indrelid
+            JOIN pg_namespace ns ON ns.oid = tab.relnamespace
+            JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+            JOIN pg_attribute att ON att.attrelid = tab.oid AND att.attnum = k.attnum
+            WHERE ix.indisprimary = false
+              AND att.attnum > 0
+              AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY ns.nspname, tab.relname, idx.relname, k.ord
+            """,
+            r => (r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4)));
+
+        return SchemaModel.Build(columns, pks, fks, indexes);
     }
 
     public async Task<QueryResultSet> ExecuteQueryAsync(

@@ -61,6 +61,39 @@ public class SchemaModelBuildTests
     }
 
     [Fact]
+    public void Build_groups_index_columns_in_order_and_keeps_uniqueness()
+    {
+        var schema = SchemaModel.Build(
+            columns: [("dbo", "Orders", "CustomerId", "int", false), ("dbo", "Orders", "PlacedAt", "datetime", false)],
+            primaryKeys: [],
+            foreignKeys: [],
+            indexes:
+            [
+                ("dbo", "Orders", "IX_Cust_Date", "CustomerId", false),
+                ("dbo", "Orders", "IX_Cust_Date", "PlacedAt", false),
+                ("dbo", "Orders", "UX_Cust", "CustomerId", true),
+            ]);
+
+        var ix = schema.Tables.Single().Indexes;
+        Assert.Equal(2, ix.Count);
+        var composite = ix.Single(i => i.Name == "IX_Cust_Date");
+        Assert.Equal(["CustomerId", "PlacedAt"], composite.Columns); // column order preserved
+        Assert.False(composite.IsUnique);
+        Assert.True(ix.Single(i => i.Name == "UX_Cust").IsUnique);
+    }
+
+    [Fact]
+    public void Build_defaults_indexes_to_empty_when_provider_supplies_none()
+    {
+        var schema = SchemaModel.Build(
+            columns: [("dbo", "Orders", "Id", "int", false)],
+            primaryKeys: [],
+            foreignKeys: []);
+
+        Assert.Empty(schema.Tables.Single().Indexes);
+    }
+
+    [Fact]
     public void Build_handles_a_table_with_no_keys()
     {
         var schema = SchemaModel.Build(
@@ -112,5 +145,25 @@ public class SchemaModelFilterTests
 
         Assert.Equal(2, filtered.Tables.Count);
         Assert.Single(filtered.Tables.Single(t => t.Name == "Public").ForeignKeys);
+    }
+
+    [Fact]
+    public void Filter_keeps_indexes_of_visible_tables_and_drops_those_of_hidden_ones()
+    {
+        var schema = SchemaModel.Build(
+            columns: [("dbo", "Public", "Id", "int", false), ("dbo", "Secret", "Token", "text", false)],
+            primaryKeys: [],
+            foreignKeys: [],
+            indexes:
+            [
+                ("dbo", "Public", "IX_Public_Id", "Id", false),
+                ("dbo", "Secret", "IX_Secret_Token", "Token", true),
+            ]);
+
+        var filtered = SchemaModel.Filter(schema, (_, table) => table != "Secret");
+
+        var kept = Assert.Single(filtered.Tables);
+        Assert.Equal("Public", kept.Name);
+        Assert.Equal("IX_Public_Id", Assert.Single(kept.Indexes).Name); // own index survives; hidden table's index is gone with it
     }
 }

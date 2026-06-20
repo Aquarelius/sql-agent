@@ -125,8 +125,8 @@ public class LocalApiDispatcherTests
     public async Task Describe_schema_filters_hidden_tables()
     {
         var schema = new DatabaseSchema([
-            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], []),
-            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], []),
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], [], []),
         ]);
         var (d, connections, db, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema));
         var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
@@ -142,6 +142,44 @@ public class LocalApiDispatcherTests
         Assert.True(r.Ok);
         var dto = Data<SchemaDto>(r);
         Assert.Equal("orders", Assert.Single(dto.Tables).Name); // hidden table dropped
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Refresh_schema_caches_and_returns_the_filtered_description()
+    {
+        var schema = new DatabaseSchema([
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+        ]);
+        var (d, connections, db, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema));
+        var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
+        db.TablePolicies.Add(new TablePolicy
+        {
+            Id = Guid.NewGuid(), DatabaseConnectionId = created.Id,
+            SchemaName = "public", TableName = "secrets", IsVisible = false,
+        });
+        await db.SaveChangesAsync();
+
+        var r = await CallAsync(d, "refresh_schema", new { id = created.Id });
+
+        Assert.True(r.Ok);
+        Assert.Equal("orders", Assert.Single(Data<SchemaDto>(r).Tables).Name);
+        Assert.True(await db.SchemaCaches.AnyAsync(c => c.DatabaseConnectionId == created.Id)); // cached
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Refresh_schema_unknown_connection_returns_database_not_found()
+    {
+        var (d, _, _, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres));
+
+        var r = await CallAsync(d, "refresh_schema", new { id = Guid.NewGuid() });
+
+        Assert.False(r.Ok);
+        Assert.Equal(ApiErrorCodes.DatabaseNotFound, r.Error!.Code);
 
         conn.Dispose();
     }
@@ -222,8 +260,8 @@ public class LocalApiDispatcherTests
     public async Task List_table_policies_reports_every_table_and_set_hides_one()
     {
         var schema = new DatabaseSchema([
-            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], []),
-            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], []),
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], [], []),
+            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], [], []),
         ]);
         var (d, connections, _, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema));
         var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
