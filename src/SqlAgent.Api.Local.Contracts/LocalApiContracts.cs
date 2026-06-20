@@ -67,6 +67,10 @@ public record DescribeSchemaParams(Guid Id);
 
 public record ExecuteSqlParams(Guid Id, string Sql);
 
+/// <summary>Ask a database a natural-language question (CD-51 Story 1.4). The Core orchestration service
+/// generates SQL, runs it through the same policy-validated path as execute_sql, and returns one outcome.</summary>
+public record AskDatabaseParams(Guid Id, string Question);
+
 public record ListTablePoliciesParams(Guid Id);
 
 /// <summary>Set one table's visibility for a connection. A hidden table is excluded from the LLM schema and
@@ -98,6 +102,27 @@ public record QueryResultDto(
     int RowCount, bool Truncated, long ElapsedMs);
 
 public record DeletedDto(bool Deleted);
+
+/// <summary>Which of the three ask_database outcomes a result carries (mirrors Core's NlResponseKind).</summary>
+public enum NlResponseKindDto { QueryResult, ClarificationRequired, Error }
+
+/// <summary>The ask_database result: exactly one outcome (<see cref="Kind"/>). A query_result carries the
+/// generated SQL plus the executed rows; clarification_required carries only <see cref="ClarificationQuestion"/>
+/// (no SQL ran); error carries a stable <see cref="ErrorCode"/> and user-safe <see cref="ErrorMessage"/>, and
+/// still echoes <see cref="GeneratedSql"/> when one existed so the user can audit what was rejected. All three
+/// ride on a successful (ok=true) envelope — like test_connection, a rejection is a normal outcome, not a
+/// transport error — so the error outcome can still carry the generated SQL.</summary>
+public record AskDatabaseResultDto(
+    NlResponseKindDto Kind,
+    string? GeneratedSql,
+    string? ClarificationQuestion,
+    string? ErrorCode,
+    string? ErrorMessage,
+    IReadOnlyList<string> Columns,
+    IReadOnlyList<IReadOnlyList<object?>> Rows,
+    int RowCount,
+    bool Truncated,
+    long ElapsedMs);
 
 /// <summary>One table with its effective visibility. Returned for every live table; <see cref="IsVisible"/>
 /// defaults to true when the connection has no policy row for the table.</summary>
