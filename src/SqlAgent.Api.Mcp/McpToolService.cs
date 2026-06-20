@@ -16,6 +16,7 @@ public record DatabaseSummary(
     [property: JsonPropertyName("read_only")] bool ReadOnly);
 
 public record ListDatabasesResponse(
+    [property: JsonPropertyName("ok")] bool Ok,
     [property: JsonPropertyName("databases")] IReadOnlyList<DatabaseSummary> Databases);
 
 public record ColumnDescription(
@@ -73,7 +74,7 @@ public class McpToolService(
     public async Task<ListDatabasesResponse> ListDatabasesAsync(CancellationToken ct = default)
     {
         var items = await connections.ListAsync(ct);
-        return new ListDatabasesResponse(items
+        return new ListDatabasesResponse(Ok: true, items
             .Select(c => new DatabaseSummary(c.Id.ToString(), c.Name, ProviderName(c.ProviderType), c.IsReadOnly))
             .ToList());
     }

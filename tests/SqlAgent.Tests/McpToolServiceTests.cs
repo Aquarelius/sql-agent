@@ -56,6 +56,7 @@ public class McpToolServiceTests
 
         var r = await tools.ListDatabasesAsync();
 
+        Assert.True(r.Ok);
         Assert.Equal(2, r.Databases.Count);
         var analytics = r.Databases.Single(d => d.Name == "analytics");
         Assert.Equal("postgres", analytics.Provider);
