@@ -46,7 +46,8 @@ public class LocalApiDispatcherTests
             connections,
             new ConnectionTester(connections, registry),
             new SchemaService(connections, registry, db),
-            new QueryExecutionService(connections, registry, db));
+            new QueryExecutionService(connections, registry, db),
+            new TablePolicyService(connections, registry, db));
         return (dispatcher, connections, db, conn);
     }
 
@@ -213,6 +214,49 @@ public class LocalApiDispatcherTests
 
         Assert.False(r.Ok);
         Assert.Equal(ApiErrorCodes.BadRequest, r.Error!.Code);
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task List_table_policies_reports_every_table_and_set_hides_one()
+    {
+        var schema = new DatabaseSchema([
+            new SchemaTable("public", "orders", [new SchemaColumn("id", "int", false)], ["id"], []),
+            new SchemaTable("public", "secrets", [new SchemaColumn("id", "int", false)], ["id"], []),
+        ]);
+        var (d, connections, _, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres, schema: schema));
+        var created = await connections.CreateAsync(new DatabaseConnectionInput("c", DatabaseProviderType.Postgres, true), "cs");
+
+        // Every live table is listed, all visible by default (unlike describe_schema, which hides them).
+        var listed = await CallAsync(d, "list_table_policies", new { id = created.Id });
+        Assert.True(listed.Ok);
+        var before = Data<TablePoliciesDto>(listed);
+        Assert.Equal(2, before.Tables.Count);
+        Assert.All(before.Tables, t => Assert.True(t.IsVisible));
+
+        // Hiding one persists and is reflected on the next list.
+        var set = await CallAsync(d, "set_table_policy",
+            new { id = created.Id, schema = "public", table = "secrets", is_visible = false });
+        Assert.True(set.Ok);
+
+        var after = Data<TablePoliciesDto>(await CallAsync(d, "list_table_policies", new { id = created.Id }));
+        Assert.False(after.Tables.Single(t => t.Table == "secrets").IsVisible);
+        Assert.True(after.Tables.Single(t => t.Table == "orders").IsVisible);
+
+        conn.Dispose();
+    }
+
+    [Fact]
+    public async Task Set_table_policy_on_unknown_connection_returns_database_not_found()
+    {
+        var (d, _, _, conn) = NewDispatcher(new ApiFakeProvider(DatabaseProviderType.Postgres));
+
+        var r = await CallAsync(d, "set_table_policy",
+            new { id = Guid.NewGuid(), schema = "public", table = "orders", is_visible = false });
+
+        Assert.False(r.Ok);
+        Assert.Equal(ApiErrorCodes.DatabaseNotFound, r.Error!.Code);
 
         conn.Dispose();
     }

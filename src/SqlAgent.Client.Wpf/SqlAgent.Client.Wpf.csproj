@@ -1,7 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\SqlAgent.Core\SqlAgent.Core.csproj" />
+    <!-- Wire DTOs only. The client never references Core/Storage/EF: it talks to the host purely over the
+         named pipe, so it must not link database drivers. -->
+    <ProjectReference Include="..\SqlAgent.Api.Local.Contracts\SqlAgent.Api.Local.Contracts.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

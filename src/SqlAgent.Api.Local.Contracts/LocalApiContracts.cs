@@ -67,6 +67,12 @@ public record DescribeSchemaParams(Guid Id);
 
 public record ExecuteSqlParams(Guid Id, string Sql);
 
+public record ListTablePoliciesParams(Guid Id);
+
+/// <summary>Set one table's visibility for a connection. A hidden table is excluded from the LLM schema and
+/// blocked by query policy, so this is how the user scopes what the agent may touch (CD-50 visibility).</summary>
+public record SetTablePolicyParams(Guid Id, string Schema, string Table, bool IsVisible);
+
 // ---- Result DTOs ----
 
 /// <summary>String mirror of Core's provider enum, so the wire stays readable and stable across enum edits.</summary>
@@ -92,3 +98,9 @@ public record QueryResultDto(
     int RowCount, bool Truncated, long ElapsedMs);
 
 public record DeletedDto(bool Deleted);
+
+/// <summary>One table with its effective visibility. Returned for every live table; <see cref="IsVisible"/>
+/// defaults to true when the connection has no policy row for the table.</summary>
+public record TablePolicyDto(string Schema, string Table, bool IsVisible);
+
+public record TablePoliciesDto(IReadOnlyList<TablePolicyDto> Tables);
