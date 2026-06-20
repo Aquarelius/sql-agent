@@ -139,6 +139,29 @@ public class SqlPolicyValidatorTests
     }
 
     [Fact]
+    public void Non_recursive_cte_body_referencing_same_name_reads_the_real_table()
+    {
+        // Regression (CD-59 escalation): a non-recursive CTE cannot see its own name, so the `secrets`
+        // inside the body is the real hidden base table and must be denied — not masked by the CTE alias.
+        var d = Validate(
+            "WITH secrets AS (SELECT * FROM secrets) SELECT * FROM secrets",
+            isVisible: Visible("secrets"));
+        Assert.False(d.Allowed);
+        Assert.Equal("policy_denied_hidden_table", d.DenyCode);
+    }
+
+    [Fact]
+    public void Recursive_cte_self_reference_is_not_a_table()
+    {
+        // A WITH RECURSIVE CTE may reference itself; that self-reference is the CTE, not a base table.
+        var d = Validate(
+            "WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM t WHERE n < 5) SELECT * FROM t",
+            isVisible: Visible("t"));
+        Assert.True(d.Allowed);
+        Assert.Empty(d.ReferencedTables);
+    }
+
+    [Fact]
     public void Cte_does_not_mask_hidden_table_inside_its_body()
     {
         // The CTE alias is dropped, but the hidden `secrets` read inside the body is still caught.

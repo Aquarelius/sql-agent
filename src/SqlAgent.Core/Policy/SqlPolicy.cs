@@ -74,11 +74,13 @@ public static class SqlAnalyzer
     /// <summary>
     /// Walks the parsed AST collecting real table references, scope-aware about CTEs. The SqlParserCS
     /// visitor is flat (no <c>Query</c> hook) so it cannot track which CTE names are in scope where; this
-    /// generic walk does. A <c>WITH</c> clause adds its CTE names to the scope of the query it heads (and
-    /// every descendant), so <c>FROM &lt;cte&gt;</c> resolves to the alias and is dropped — but a real
-    /// table of the same name in an outer or sibling scope keeps being checked. Schema-qualified names are
-    /// never CTEs and always stay. Catches tables behind aliases, joins, CTE bodies, subqueries, and DML
-    /// targets in one pass.
+    /// generic walk does. A <c>WITH</c> clause's names are in scope for the query body (and every
+    /// descendant), so <c>FROM &lt;cte&gt;</c> resolves to the alias and is dropped — but a real table of
+    /// the same name in an outer or sibling scope keeps being checked. CTE *bodies* see a narrower scope:
+    /// a non-recursive CTE cannot see its own name (so <c>WITH t AS (SELECT * FROM t)</c> reads the real
+    /// table <c>t</c>), only the names of CTEs declared before it. Schema-qualified names are never CTEs
+    /// and always stay. Catches tables behind aliases, joins, CTE bodies, subqueries, and DML targets in
+    /// one pass.
     /// </summary>
     private sealed class TableCollector
     {
@@ -99,10 +101,6 @@ public static class SqlAnalyzer
             if (node.GetType().Namespace?.StartsWith("SqlParser.Ast", StringComparison.Ordinal) != true) return;
             if (!_visited.Add(node)) return;
 
-            // A WITH clause brings its CTE names into scope for this query and everything nested below it.
-            if (node is Query { With: { } with })
-                scope = scope.Union(with.CteTables.Select(c => c.Alias.Name.Value));
-
             // Real table references: FROM/JOIN targets, plus UPDATE/DELETE targets (also TableFactor.Table).
             if (node is TableFactor.Table table)
                 AddUnlessCte(table.Name, scope);
@@ -110,13 +108,54 @@ public static class SqlAnalyzer
             else if (node is Statement.Insert insert)
                 AddUnlessCte(insert.InsertOperation.Name, scope);
 
+            // A WITH clause needs per-part scoping, so handle a Query's CTEs explicitly rather than letting
+            // the generic property walk apply one flat scope to both the bodies and the CTE definitions.
+            if (node is Query { With: { } with } query)
+            {
+                WalkQueryWithCtes(query, with, scope);
+                return;
+            }
+
+            foreach (var value in ChildNodes(node))
+                Walk(value, scope);
+        }
+
+        private void WalkQueryWithCtes(Query query, With with, ImmutableHashSet<string> outerScope)
+        {
+            var allNames = with.CteTables.Select(c => c.Alias.Name.Value).ToList();
+            var bodyScope = outerScope.Union(allNames);
+
+            // Walk each CTE definition with only the names visible to it: prior CTEs (non-recursive), or
+            // the whole WITH list including itself (recursive, where self/mutual references are legal).
+            var priorScope = outerScope;
+            foreach (var cte in with.CteTables)
+            {
+                Walk(cte.Query, with.Recursive ? bodyScope : priorScope);
+                if (!with.Recursive)
+                    priorScope = priorScope.Add(cte.Alias.Name.Value);
+            }
+
+            // Walk the rest of the query (body, ORDER BY, LIMIT, ...) with all CTE names in scope.
+            foreach (var prop in query.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (prop.Name == nameof(Query.With)) continue;
+                if (prop.GetIndexParameters().Length > 0) continue;
+                object? value;
+                try { value = prop.GetValue(query); }
+                catch { continue; }
+                Walk(value, bodyScope);
+            }
+        }
+
+        private static IEnumerable<object?> ChildNodes(object node)
+        {
             foreach (var prop in node.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (prop.GetIndexParameters().Length > 0) continue;
                 object? value;
                 try { value = prop.GetValue(node); }
                 catch { continue; }
-                Walk(value, scope);
+                yield return value;
             }
         }
 
