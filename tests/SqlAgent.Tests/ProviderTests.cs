@@ -21,6 +21,10 @@ file sealed class FakeProvider(DatabaseProviderType type, ConnectionTestResult r
 
     public Task<DatabaseSchema> GetSchemaAsync(string connectionString, CancellationToken ct = default)
         => throw new NotSupportedException();
+
+    public Task<QueryResultSet> ExecuteQueryAsync(
+        string connectionString, string sql, QueryExecutionOptions options, CancellationToken ct = default)
+        => throw new NotSupportedException();
 }
 
 public class DatabaseProviderRegistryTests

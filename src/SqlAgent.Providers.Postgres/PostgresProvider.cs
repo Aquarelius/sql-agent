@@ -80,6 +80,16 @@ public class PostgresProvider : IDatabaseProvider
         return SchemaModel.Build(columns, pks, fks);
     }
 
+    public async Task<QueryResultSet> ExecuteQueryAsync(
+        string connectionString, string sql, QueryExecutionOptions options, CancellationToken ct = default)
+    {
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new NpgsqlCommand(sql, conn) { CommandTimeout = options.CommandTimeoutSeconds };
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await ResultSetReader.ReadAsync(reader, options.MaxRows, ct);
+    }
+
     private static async Task<List<T>> Query<T>(
         NpgsqlConnection conn, CancellationToken ct, string sql, Func<NpgsqlDataReader, T> map)
     {

@@ -29,8 +29,10 @@ public record SqlTableReference(string? Schema, string Name)
     public override string ToString() => Schema is null ? Name : $"{Schema}.{Name}";
 }
 
-/// <summary>One parsed statement: its kind, the parser's concrete type name, and every table it touches.</summary>
-public record ParsedStatement(SqlStatementKind Kind, string StatementType, IReadOnlyList<SqlTableReference> Tables);
+/// <summary>One parsed statement: its kind, the parser's concrete type name, its canonical re-rendered
+/// (normalized) SQL, and every table it touches.</summary>
+public record ParsedStatement(
+    SqlStatementKind Kind, string StatementType, string Normalized, IReadOnlyList<SqlTableReference> Tables);
 
 /// <summary>
 /// Dialect-aware SQL parsing (ADR-0002, CD-50 T5). Turns raw SQL into <see cref="ParsedStatement"/>s
@@ -68,7 +70,7 @@ public static class SqlAnalyzer
             _ => SqlStatementKind.Other,
         };
 
-        return new ParsedStatement(kind, statement.GetType().Name, collector.References);
+        return new ParsedStatement(kind, statement.GetType().Name, statement.ToSql(), collector.References);
     }
 
     /// <summary>
@@ -177,17 +179,23 @@ public static class SqlAnalyzer
     }
 }
 
-/// <summary>Allow/deny outcome with a stable code (for audit + client error mapping) and the tables seen.</summary>
+/// <summary>
+/// Allow/deny outcome with a stable code (for audit + client error mapping), the tables seen, and the
+/// normalized SQL (canonical re-render of the single parsed statement; null when SQL was empty/unparseable).
+/// </summary>
 public record PolicyDecision(
     bool Allowed,
     string? DenyCode,
     string? Reason,
-    IReadOnlyList<SqlTableReference> ReferencedTables)
+    IReadOnlyList<SqlTableReference> ReferencedTables,
+    string? NormalizedSql = null)
 {
-    public static PolicyDecision Allow(IReadOnlyList<SqlTableReference> tables) => new(true, null, null, tables);
+    public static PolicyDecision Allow(IReadOnlyList<SqlTableReference> tables, string? normalizedSql) =>
+        new(true, null, null, tables, normalizedSql);
 
-    public static PolicyDecision Deny(string code, string reason, IReadOnlyList<SqlTableReference> tables)
-        => new(false, code, reason, tables);
+    public static PolicyDecision Deny(
+        string code, string reason, IReadOnlyList<SqlTableReference> tables, string? normalizedSql = null)
+        => new(false, code, reason, tables, normalizedSql);
 }
 
 /// <summary>
@@ -240,21 +248,21 @@ public static class SqlPolicyValidator
             return PolicyDecision.Deny(
                 "policy_denied_unsupported",
                 $"Statement type '{stmt.StatementType}' is not supported.",
-                stmt.Tables);
+                stmt.Tables, stmt.Normalized);
 
         if (isReadOnly && stmt.Kind != SqlStatementKind.Read)
             return PolicyDecision.Deny(
                 "policy_denied_readonly",
                 $"Connection is read-only; '{stmt.StatementType}' would modify data.",
-                stmt.Tables);
+                stmt.Tables, stmt.Normalized);
 
         var hidden = stmt.Tables.Where(t => !isVisible(t)).ToList();
         if (hidden.Count > 0)
             return PolicyDecision.Deny(
                 "policy_denied_hidden_table",
                 $"References table(s) not visible to this connection: {string.Join(", ", hidden)}.",
-                stmt.Tables);
+                stmt.Tables, stmt.Normalized);
 
-        return PolicyDecision.Allow(stmt.Tables);
+        return PolicyDecision.Allow(stmt.Tables, stmt.Normalized);
     }
 }
