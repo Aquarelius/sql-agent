@@ -42,9 +42,9 @@ public class NlQueryServiceTests
 {
     private static readonly DatabaseSchema Schema = new([
         new SchemaTable("public", "orders",
-            [new SchemaColumn("id", "int", false), new SchemaColumn("total", "numeric", true)], ["id"], []),
+            [new SchemaColumn("id", "int", false), new SchemaColumn("total", "numeric", true)], ["id"], [], []),
         new SchemaTable("public", "secrets",
-            [new SchemaColumn("token", "text", false)], [], []),
+            [new SchemaColumn("token", "text", false)], [], [], []),
     ]);
 
     private static (SqlAgentDbContext db, SqliteConnection conn) NewStore()
