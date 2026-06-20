@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SqlAgent.Core\SqlAgent.Core.csproj" />
+    <ProjectReference Include="..\SqlAgent.Storage\SqlAgent.Storage.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
