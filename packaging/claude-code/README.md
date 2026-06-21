@@ -8,6 +8,9 @@ audit logging stay in Core. The server exposes exactly three tools:
 - `describe_schema` — policy-filtered tables/columns/keys (hidden tables omitted).
 - `query_database` — policy-validated, row-capped query execution.
 
+Shared setup details for all IDE hosts are in
+[`../../docs/ide-plugin-setup.md`](../../docs/ide-plugin-setup.md).
+
 ## Prerequisites
 
 - .NET 10 SDK.

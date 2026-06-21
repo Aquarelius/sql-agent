@@ -27,6 +27,11 @@ editor. Setup, smoke test, and error codes are in
 [`packaging/claude-code/README.md`](packaging/claude-code/README.md); the
 ready-to-commit config is [`packaging/claude-code/.mcp.json`](packaging/claude-code/.mcp.json).
 
+Shared IDE plugin setup, MCP tool contracts, host matrix, and troubleshooting
+are in [`docs/ide-plugin-setup.md`](docs/ide-plugin-setup.md). Host-specific
+Gemini CLI and Codex setup pages are in [`docs/gemini-cli.md`](docs/gemini-cli.md)
+and [`docs/codex-cli.md`](docs/codex-cli.md).
+
 ## Build and tests
 
 ```bash
