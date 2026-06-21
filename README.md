@@ -20,6 +20,13 @@ SqlAgent__Storage__ConnectionString="Data Source=/path/to/sqlagent.db" dotnet ru
 Windows service and systemd packaging examples are in `packaging/`. Operator
 startup, fixture, and troubleshooting notes are in `docs/runbook.md`.
 
+## Claude Code (MCP)
+
+Register the SQL Agent MCP server with Claude Code to query databases from your
+editor. Setup, smoke test, and error codes are in
+[`packaging/claude-code/README.md`](packaging/claude-code/README.md); the
+ready-to-commit config is [`packaging/claude-code/.mcp.json`](packaging/claude-code/.mcp.json).
+
 ## Build and tests
 
 ```bash
