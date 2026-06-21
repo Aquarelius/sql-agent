@@ -5,29 +5,70 @@ configuration entry that launches `SqlAgent.Api.Mcp`; any future Codex package
 should still wrap the same MCP server. Shared prerequisites, tool contracts,
 errors, and troubleshooting live in [`ide-plugin-setup.md`](ide-plugin-setup.md).
 
+## Publish a self-contained executable
+
+For a packaged install that does not depend on a .NET SDK on the host, publish
+`SqlAgent.Api.Mcp` as a single self-contained executable. Pick the runtime
+identifier for your machine (`win-x64`, `linux-x64`, `osx-arm64`, ...):
+
+```bash
+dotnet publish src/SqlAgent.Api.Mcp/SqlAgent.Api.Mcp.csproj \
+  -c Release -r win-x64 --self-contained
+```
+
+The executable lands at
+`src/SqlAgent.Api.Mcp/bin/Release/net10.0/win-x64/publish/SqlAgent.Api.Mcp(.exe)`.
+Copy that single file wherever you like and point Codex at it. To launch from
+source instead, build the DLL (`dotnet build ... -c Release`) and run it with
+`dotnet` as shown in the alternate snippets below.
+
 ## Configuration
 
 Add `sql-agent` to user-level `~/.codex/config.toml` or a project-level
-`.codex/config.toml`:
+`.codex/config.toml`, pointing `command` at the published executable:
 
 ```toml
 [mcp_servers.sql-agent]
-command = "dotnet"
-args = [
-  "src/SqlAgent.Api.Mcp/bin/Release/net10.0/SqlAgent.Api.Mcp.dll"
-]
-cwd = "C:\\path\\to\\sql-agent"
+command = "C:\\path\\to\\SqlAgent.Api.Mcp.exe"
 env = { SQLAGENT_DB = "C:\\path\\to\\sqlagent.db" }
 ```
 
 Or register it with the CLI:
 
 ```bash
+codex mcp add sql-agent --env SQLAGENT_DB=/absolute/path/to/sqlagent.db -- \
+  /absolute/path/to/SqlAgent.Api.Mcp
+```
+
+Running from source instead of a published exe? Use `command = "dotnet"` with
+the built DLL as the argument:
+
+```toml
+[mcp_servers.sql-agent]
+command = "dotnet"
+args = ["src/SqlAgent.Api.Mcp/bin/Release/net10.0/SqlAgent.Api.Mcp.dll"]
+cwd = "C:\\path\\to\\sql-agent"
+env = { SQLAGENT_DB = "C:\\path\\to\\sqlagent.db" }
+```
+
+```bash
 codex mcp add sql-agent -- dotnet src/SqlAgent.Api.Mcp/bin/Release/net10.0/SqlAgent.Api.Mcp.dll
 ```
 
-Use an absolute `SQLAGENT_DB` path. For packaged installs, point `command` at the
-published `SqlAgent.Api.Mcp` executable instead of `dotnet`.
+## `SQLAGENT_DB` and the policy boundary
+
+`SQLAGENT_DB` points the server at the local SQLite daemon store — the same
+config file the SQL Agent daemon and WPF client use (ADR-0004). Always give it
+an absolute path so Codex finds the right store regardless of its working
+directory; if unset, the server falls back to `sqlagent.db` in the process
+directory.
+
+Codex never talks to a database directly. Every call goes through
+`SqlAgent.Api.Mcp` into Core, which enforces read-only connections, table
+visibility, row caps, and audit logging before any result returns. Writes on a
+read-only connection are denied with `policy_denied_readonly`, and hidden tables
+are omitted from `describe_schema` and denied with `policy_denied_hidden_table`.
+The config entry is launch wiring only; it cannot widen what Core permits.
 
 ## Smoke test
 

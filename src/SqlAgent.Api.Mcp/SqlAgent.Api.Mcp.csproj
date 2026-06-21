@@ -5,6 +5,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Self-contained single-file publish: pass a RID and the self-contained flag on the
+         CLI (see docs/codex-cli.md) to get one exe. Those stay off the project so a plain
+         build/test is unaffected (ponytail: minimal packaging knob). -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
