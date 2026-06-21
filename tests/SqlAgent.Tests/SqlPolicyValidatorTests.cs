@@ -242,6 +242,30 @@ public class SqlPolicyValidatorTests
         Assert.Equal("policy_denied_hidden_table", d.DenyCode);
     }
 
+    [Fact]
+    public void SqlServer_top_on_visible_table_is_allowed()
+    {
+        var d = Validate("SELECT TOP 10 * FROM orders", provider: DatabaseProviderType.SqlServer);
+        Assert.True(d.Allowed);
+        Assert.Contains(d.ReferencedTables, t => t.Name == "orders");
+    }
+
+    [Fact]
+    public void Postgres_limit_on_visible_table_is_allowed()
+    {
+        var d = Validate("SELECT * FROM orders LIMIT 10", provider: DatabaseProviderType.Postgres);
+        Assert.True(d.Allowed);
+        Assert.Contains(d.ReferencedTables, t => t.Name == "orders");
+    }
+
+    [Fact]
+    public void Postgres_limit_does_not_mask_a_hidden_table()
+    {
+        var d = Validate("SELECT * FROM secrets LIMIT 10", isVisible: Visible("secrets"));
+        Assert.False(d.Allowed);
+        Assert.Equal("policy_denied_hidden_table", d.DenyCode);
+    }
+
     // --- Malformed / empty input ----------------------------------------------
 
     [Fact]
