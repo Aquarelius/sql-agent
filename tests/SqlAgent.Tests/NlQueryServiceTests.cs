@@ -186,6 +186,22 @@ public class NlQueryServiceTests
     }
 
     [Fact]
+    public async Task Prompt_context_includes_dialect_hints()
+    {
+        var (db, conn) = NewStore();
+        var gateway = new FakeGateway(LlmSqlResponse.Clarify("?"));
+        var (svc, connections) = Build(db, new NlFakeProvider(Schema), gateway);
+        var id = await AddConnectionAsync(connections); // Postgres connection (see Build/AddConnectionAsync)
+
+        await svc.AskAsync(id, "anything");
+
+        // The schema text must be preceded by the target-dialect guidance so the model emits portable SQL.
+        Assert.Contains("LIMIT", gateway.LastRequest!.SchemaContext);
+        Assert.Contains("RETURNING", gateway.LastRequest.SchemaContext);
+        conn.Dispose();
+    }
+
+    [Fact]
     public async Task Empty_question_short_circuits()
     {
         var (db, conn) = NewStore();

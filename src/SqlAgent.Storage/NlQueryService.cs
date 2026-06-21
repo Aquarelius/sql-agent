@@ -74,7 +74,10 @@ public class NlQueryService(
         if (schema is null)
             return NlQueryResult.Error("connection_secret_missing", "Connection secret is missing.");
 
-        var request = new LlmSqlRequest(question, info.ProviderType, FormatSchema(schema));
+        // Dialect hints first so the model targets the right syntax (TOP vs LIMIT, GETDATE vs NOW, etc.),
+        // then the policy-filtered schema. Both are plain prompt text — nothing here is executed.
+        var schemaContext = $"{DialectHints.For(info.ProviderType)}\n\n{FormatSchema(schema)}";
+        var request = new LlmSqlRequest(question, info.ProviderType, schemaContext);
 
         LlmSqlResponse llm;
         try
